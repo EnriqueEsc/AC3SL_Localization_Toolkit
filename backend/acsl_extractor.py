@@ -43,60 +43,34 @@ def generar_diccionario_json(directorio_dat, min_chars=4, umbral_legibilidad=0.6
     diccionario_juego = {}
     archivos_procesados = 0
     
-    # LA MAGIA DEL BÚFER: Expresión regular para datos binarios
+    # Expresión regular para datos binarios
     # Grupo 1: ([^\x00]+) -> Todo lo que NO sea 00 (El texto o datos)
     # Grupo 2: (\x00+)    -> Uno o más 00 consecutivos (El padding original)
     patron_bloque = re.compile(b'([^\x00]+)(\x00+)')
     
-    print("Iniciando extracción con Lector de Búfer Continuo y Shift-JIS...")
+    
+    archivos_dat = [f for f in os.listdir(directorio_dat) if f.endswith('.dat')]
+    total_archivos = len(archivos_dat)
+    
+    print(f"Iniciando extracción de {total_archivos} archivos con Lector de Búfer...")
 
-    for nombre_archivo in os.listdir(directorio_dat):
-        if not nombre_archivo.endswith('.dat'):
-            continue
+    for i, nombre_archivo in enumerate(archivos_dat):
+        # Imprime el progreso cada 500 archivos para no saturar la GUI
+        if i % 500 == 0 and i > 0:
+            print(f"Procesando: {i} / {total_archivos} archivos...")
             
         ruta_completa = os.path.join(directorio_dat, nombre_archivo)
-        with open(ruta_completa, 'rb') as f:
-            datos = f.read()
 
-        entradas_archivo = []
-
-        # Usamos finditer para "barrer" el archivo bloque por bloque
-        for match in patron_bloque.finditer(datos):
-            bloque_texto = match.group(1) # Solo el texto
-            bloque_ceros = match.group(2) # Solo los 00 que le sobran
-            
-            # Filtramos si el texto es muy corto
-            if len(bloque_texto) < min_chars:
-                continue
-                
-            # Evaluamos legibilidad SOLO en la porción de texto
-            bytes_legibles = sum(1 for b in bloque_texto if 32 <= b <= 126 or b in (10, 13) or (0x81 <= b <= 0x9F) or (0xE0 <= b <= 0xEF))
-            
-            if (bytes_legibles / len(bloque_texto)) >= umbral_legibilidad:
-                texto_limpio = decodificar_bloque(bloque_texto)
-                
-                # Ignorar bloques que sean pura "basura" hexadecimal sin texto real
-                if texto_limpio.replace('[', '').replace(']', '').strip():
-                    
-                    # EL CÁLCULO REAL: Sumamos el peso del texto original + su padding
-                    capacidad_total = len(bloque_texto) + len(bloque_ceros)
-                    
-                    entradas_archivo.append({
-                        "original": texto_limpio,
-                        "traduccion": "",
-                        "max_bytes": capacidad_total # <-- Ahora sí, el espacio 100% real
-                    })
+    # Exportar el JSON maestro a la carpeta raw_output
+    ruta_salida = os.path.join("data", "raw_output")
+    if not os.path.exists(ruta_salida):
+        os.makedirs(ruta_salida)
         
-        if entradas_archivo:
-            diccionario_juego[nombre_archivo] = entradas_archivo
-            archivos_procesados += 1
-
-    # Exportar el JSON maestro
-    nombre_json = "SilentLine_Master.json"
+    nombre_json = os.path.join(ruta_salida, "SilentLine_Master.json")
     with open(nombre_json, 'w', encoding='utf-8') as f:
         json.dump(diccionario_juego, f, ensure_ascii=False, indent=4)
 
-    print(f"\n¡Backend finalizado! {archivos_procesados} archivos indexados.")
+    print(f"\n¡Backend finalizado! {archivos_procesados} archivos indexados con éxito.")
     print(f"Base de datos guardada en: {nombre_json}")
 
 if __name__ == "__main__":
