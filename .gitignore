@@ -1,0 +1,32 @@
+# Entornos virtuales
+.venv/
+venv/
+ENV/
+
+# Dependencias y compilados de Python
+__pycache__/
+*.pyc
+*.log
+
+# ---------------------------------------------------
+# ARCHIVOS DEL JUEGO Y VOLCADOS (¡NO SUBIR A GITHUB!)
+# ---------------------------------------------------
+# Aquí viven los archivos con copyright y los JSON gigantes
+/data/dats/
+/data/dumps/
+/data/replacements/
+/data/raw_output/
+
+# Archivos de la ISO original (por si los pones en la raíz)
+*.BIN
+*.bin
+*.ELF
+*.elf
+SLUS*
+
+# ---------------------------------------------------
+# IDEs y SO
+# ---------------------------------------------------
+.vscode/
+.idea/
+.DS_Store

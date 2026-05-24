@@ -1,0 +1,27 @@
+# Script de Extracción Absoluta para Armored Core 3: Silent Line (AC3DATA.BIN)
+# Basado en arquitectura BND.LTL sin conversión LBA
+
+idstring "BND\x00LTL\x00"
+
+# Ir a la cabecera para determinar el límite del bucle de extracción
+goto 0x10
+get FILES long
+
+# Inicio de la tabla de indexación
+goto 0x20
+
+for i = 0 < FILES
+    get ID long
+    get SIZE long
+    get OFFSET long
+    get DUMMY long
+    
+    # Se ha eliminado la instrucción aritmética (math OFFSET * 2048) 
+    # ya que los desplazamientos están precalculados en bytes.
+    
+    # Formateo del nombre de salida respetando el ID nativo del motor
+    string NAME p "%05d.dat" ID
+    
+    # Ejecución de la extracción y registro en consola
+    log NAME OFFSET SIZE
+next i
