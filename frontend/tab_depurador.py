@@ -1,8 +1,10 @@
 import os
 import json
+import re
 from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, 
                              QListWidget, QLineEdit, QLabel, QCheckBox,
-                             QTextEdit, QPushButton, QMessageBox, QRadioButton, QButtonGroup)
+                             QTextEdit, QPushButton, QMessageBox, QRadioButton, 
+                             QButtonGroup, QProgressBar, QFileDialog) # <-- Añadimos QFileDialog aquí
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import QShortcut
@@ -13,30 +15,43 @@ class WorkerCargaJSON(QThread):
     progreso = pyqtSignal(int)
     terminado = pyqtSignal(list)
 
-    def __init__(self, ruta_json):
+    def __init__(self, rutas_json):
         super().__init__()
-        self.ruta_json = ruta_json
+        self.rutas_json = rutas_json # Ahora recibe una lista de rutas
 
     def run(self):
-        # Lógica de carga y depuración automática
-        with open(self.ruta_json, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
         textos_unicos = set()
-        total_items = sum(len(v) for v in data.values())
         contador = 0
+        total_items = 0
+        data_archivos = []
         
-        for archivo, entradas in data.items():
-            for entrada in entradas:
-                original = entrada.get("original", "")
-                # Filtro rápido de basura visual antes de mostrar en la GUI
-                if len(original) > 4 and not re.search(r'\[[A-F0-9]{2}\]', original):
-                    textos_unicos.add(original)
-                
-                contador += 1
-                if contador % 1000 == 0:
-                    self.progreso.emit(int((contador / total_items) * 100))
+        # 1. Primero cargamos todos los archivos a la memoria y calculamos el total
+        for ruta in self.rutas_json:
+            with open(ruta, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                data_archivos.append(data)
+                total_items += sum(len(v) for v in data.values())
+
+        if total_items == 0:
+            self.terminado.emit([])
+            return
+
+        # 2. Procesamos y unificamos todo
+        for data in data_archivos:
+            for archivo, entradas in data.items():
+                for entrada in entradas:
+                    original = entrada.get("original", "")
+                    
+                    # Filtro rápido de basura visual antes de mostrar en la GUI
+                    if len(original) > 4 and not re.search(r'\[[A-F0-9]{2}\]', original):
+                        textos_unicos.add(original)
+                    
+                    contador += 1
+                    # Actualizar la barra de progreso cada 1000 items para no saturar la UI
+                    if contador % 1000 == 0:
+                        self.progreso.emit(int((contador / total_items) * 100))
         
+        # Emitimos la lista final ordenada alfabéticamente
         self.terminado.emit(sorted(list(textos_unicos)))
 
 class TabDepurador(QWidget):
@@ -68,22 +83,22 @@ class TabDepurador(QWidget):
     def init_ui(self):
         layout_principal = QHBoxLayout()
 
-
-
-
         # ==========================================
         # PANEL IZQUIERDO: Búsqueda y Lista
         # ==========================================
         panel_izquierdo = QVBoxLayout()
 
-        
+        # 1. El botón de cargar y la barra de progreso
         self.btn_cargar = QPushButton("📂 Cargar JSON Maestro")
+        self.btn_cargar.setStyleSheet("background-color: #607D8B; color: white; font-weight: bold; padding: 5px;")
         self.btn_cargar.clicked.connect(self.abrir_archivo_json)
         
         self.barra_progreso = QProgressBar()
-        # ... añadir al layout ...
+        self.barra_progreso.setValue(0)
+        self.barra_progreso.setTextVisible(False) # La hacemos discreta
+        self.barra_progreso.setFixedHeight(10)
         
-        # Fila de búsqueda
+        # 2. Fila de búsqueda
         layout_busqueda = QHBoxLayout()
         self.barra_busqueda = QLineEdit()
         self.barra_busqueda.setPlaceholderText("🔍 Buscar texto...")
@@ -96,13 +111,21 @@ class TabDepurador(QWidget):
         layout_busqueda.addWidget(self.chk_mayusculas)
         
         self.lista_textos = QListWidget()
-        # Datos de prueba (Luego los conectaremos con los JSON reales)
-        self.textos_originales = ["WEIGHT", "SAVE GAME DATA?", "褂[EC][F2][DD] (Basura)", "Target Destroyed", "AC Test"]
+        self.textos_originales = ["(Carga un JSON para comenzar)"]
         self.poblar_lista()
 
+        # 3. Ensamblamos todo el panel izquierdo (¡AQUÍ FALTABAN LOS ADDWIDGET!)
+        panel_izquierdo.addWidget(self.btn_cargar)
+        panel_izquierdo.addWidget(self.barra_progreso)
+        panel_izquierdo.addSpacing(10)
         panel_izquierdo.addWidget(QLabel("Entradas en Bruto:"))
         panel_izquierdo.addLayout(layout_busqueda)
         panel_izquierdo.addWidget(self.lista_textos)
+
+        # ==========================================
+        # PANEL DERECHO: Visualización y Banderas
+        # ==========================================
+        # (El resto de tu código del panel derecho sigue igual...)
 
         # ==========================================
         # PANEL DERECHO: Visualización y Banderas
@@ -234,10 +257,12 @@ class TabDepurador(QWidget):
             self.lista_textos.setCurrentRow(fila_actual + 1)
     
     def abrir_archivo_json(self):
-        ruta, _ = QFileDialog.getOpenFileName(self, "Seleccionar JSON", "", "JSON (*.json)")
-        if ruta:
+        # Usamos getOpenFileNames (plural) para seleccionar varios archivos a la vez
+        rutas, _ = QFileDialog.getOpenFileNames(self, "Seleccionar JSON(s)", "", "JSON (*.json)")
+        
+        if rutas: # 'rutas' ahora es una lista de archivos, ej: ['SilentLine_Master.json', 'SLUS_Master.json']
             self.barra_progreso.setValue(0)
-            self.worker = WorkerCargaJSON(ruta)
+            self.worker = WorkerCargaJSON(rutas) # Le pasamos la lista entera al Worker
             self.worker.progreso.connect(self.barra_progreso.setValue)
             self.worker.terminado.connect(self.cargar_lista_final)
             self.worker.start()
