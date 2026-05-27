@@ -4,61 +4,109 @@ import re
 from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, 
                              QListWidget, QLineEdit, QLabel, QCheckBox,
                              QTextEdit, QPushButton, QMessageBox, QRadioButton, 
-                             QButtonGroup, QProgressBar, QFileDialog) # <-- Añadimos QFileDialog aquí
-from PyQt5.QtCore import Qt
+                             QButtonGroup, QProgressBar, QFileDialog)
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import QShortcut
-from PyQt5.QtWidgets import QProgressBar
-from PyQt5.QtCore import QThread, pyqtSignal
 
 class WorkerCargaJSON(QThread):
+    terminado = pyqtSignal(list, dict, dict)
     progreso = pyqtSignal(int)
-    terminado = pyqtSignal(list)
 
     def __init__(self, rutas_json):
         super().__init__()
-        self.rutas_json = rutas_json # Ahora recibe una lista de rutas
+        self.rutas_json = rutas_json
 
     def run(self):
-        textos_unicos = set()
-        contador = 0
+        textos_unicos = {}      # { "texto": min_max_bytes }
+        tags_importados = {}    # { "texto": id_etiqueta }
         total_items = 0
         data_archivos = []
         
-        # 1. Primero cargamos todos los archivos a la memoria y calculamos el total
+        # 1. Cargamos todos los archivos a memoria y calculamos su tamaño real
         for ruta in self.rutas_json:
             with open(ruta, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 data_archivos.append(data)
-                total_items += sum(len(v) for v in data.values())
+                
+                if not data:
+                    continue
+                    
+                # Detectamos la estructura del JSON analizando su primer elemento
+                primer_valor = next(iter(data.values()))
+                
+                if isinstance(primer_valor, list):
+                    # Formato crudo de extractores: {"02032.dat": [ {...}, {...} ]}
+                    total_items += sum(len(v) for v in data.values() if isinstance(v, list))
+                else:
+                    # Formato Plantilla {"Texto": {...}} o Progreso {"Texto": 1}
+                    total_items += len(data)
 
         if total_items == 0:
-            self.terminado.emit([])
+            self.terminado.emit([], {}, {})
             return
 
-        # 2. Procesamos y unificamos todo
+        contador = 0
+        
+        # 2. Procesamiento Inteligente Multiformato
         for data in data_archivos:
-            for archivo, entradas in data.items():
-                for entrada in entradas:
-                    original = entrada.get("original", "")
+            if not data:
+                continue
+                
+            primer_valor = next(iter(data.values()))
+            
+            # TIPO A: Es un JSON en bruto de los extractores (dict de listas)
+            if isinstance(primer_valor, list):
+                for archivo, entradas in data.items():
+                    if not isinstance(entradas, list): continue
+                    for entrada in entradas:
+                        original = entrada.get("original", "")
+                        
+                        # Filtro de basura visual
+                        if len(original) > 4 and not re.search(r'\[[A-F0-9]{2}\]', original):
+                            mb = entrada.get("max_bytes", 9999)
+                            if original not in textos_unicos or mb < textos_unicos[original]:
+                                textos_unicos[original] = mb
+                        
+                        contador += 1
+                        if contador % 1000 == 0:
+                            self.progreso.emit(int((contador / total_items) * 100))
+                            
+            # TIPO B: Es la Plantilla Maestra (dict de dicts)
+            elif isinstance(primer_valor, dict):
+                for texto, info in data.items():
+                    if "tipo" in info:
+                        tags_importados[texto] = info["tipo"]
                     
-                    # Filtro rápido de basura visual antes de mostrar en la GUI
-                    if len(original) > 4 and not re.search(r'\[[A-F0-9]{2}\]', original):
-                        textos_unicos.add(original)
+                    mb = info.get("max_bytes", 9999)
+                    if texto not in textos_unicos or mb < textos_unicos[texto]:
+                        textos_unicos[texto] = mb
                     
                     contador += 1
-                    # Actualizar la barra de progreso cada 1000 items para no saturar la UI
+                    if contador % 1000 == 0:
+                        self.progreso.emit(int((contador / total_items) * 100))
+                        
+            # TIPO C: Es un archivo de progreso simple (dict de enteros)
+            elif isinstance(primer_valor, int):
+                for texto, flag in data.items():
+                    tags_importados[texto] = flag
+                    # Si no tenemos el texto en memoria, lo agregamos con un límite seguro
+                    if texto not in textos_unicos:
+                        textos_unicos[texto] = 9999 
+                        
+                    contador += 1
                     if contador % 1000 == 0:
                         self.progreso.emit(int((contador / total_items) * 100))
         
-        # Emitimos la lista final ordenada alfabéticamente
-        self.terminado.emit(sorted(list(textos_unicos)))
+        # Emitimos los datos procesados a la interfaz
+        lista_ordenada = sorted(list(textos_unicos.keys()))
+        self.terminado.emit(lista_ordenada, textos_unicos, tags_importados)
 
 class TabDepurador(QWidget):
     def __init__(self):
         super().__init__()
-        # Diccionario en memoria para guardar el progreso { "texto": "bandera" }
         self.progreso = {}
+        self.metadata_textos = {} # Guardará los max_bytes
         self.archivo_temporal = os.path.join("data", "raw_output", "progreso_depuracion.json")
         self.cargar_progreso()
         
@@ -74,7 +122,6 @@ class TabDepurador(QWidget):
                 print(f"Error cargando progreso temporal: {e}")
 
     def guardar_progreso(self):
-        # Aseguramos que la carpeta exista
         os.makedirs(os.path.dirname(self.archivo_temporal), exist_ok=True)
         with open(self.archivo_temporal, 'w', encoding='utf-8') as f:
             json.dump(self.progreso, f, ensure_ascii=False, indent=4)
@@ -88,44 +135,50 @@ class TabDepurador(QWidget):
         # ==========================================
         panel_izquierdo = QVBoxLayout()
 
-        # 1. El botón de cargar y la barra de progreso
-        self.btn_cargar = QPushButton("📂 Cargar JSON Maestro")
-        self.btn_cargar.setStyleSheet("background-color: #607D8B; color: white; font-weight: bold; padding: 5px;")
+        self.btn_cargar = QPushButton("📂 Cargar JSON(s) para Depurar o Merge")
+        self.btn_cargar.setStyleSheet("background-color: #607D8B; color: white; font-weight: bold; padding: 8px;")
         self.btn_cargar.clicked.connect(self.abrir_archivo_json)
         
         self.barra_progreso = QProgressBar()
         self.barra_progreso.setValue(0)
-        self.barra_progreso.setTextVisible(False) # La hacemos discreta
+        self.barra_progreso.setTextVisible(False)
         self.barra_progreso.setFixedHeight(10)
         
-        # 2. Fila de búsqueda
         layout_busqueda = QHBoxLayout()
         self.barra_busqueda = QLineEdit()
         self.barra_busqueda.setPlaceholderText("🔍 Buscar texto...")
         self.barra_busqueda.textChanged.connect(self.filtrar_lista)
         
+        layout_filtros = QVBoxLayout()
         self.chk_mayusculas = QCheckBox("Aa Coincidir mayúsculas")
         self.chk_mayusculas.stateChanged.connect(self.filtrar_lista)
         
+        self.chk_ocultar = QCheckBox("🚫 Excluir ya etiquetados")
+        self.chk_ocultar.stateChanged.connect(self.filtrar_lista)
+        
+        layout_filtros.addWidget(self.chk_mayusculas)
+        layout_filtros.addWidget(self.chk_ocultar)
+        
         layout_busqueda.addWidget(self.barra_busqueda)
-        layout_busqueda.addWidget(self.chk_mayusculas)
+        layout_busqueda.addLayout(layout_filtros)
         
         self.lista_textos = QListWidget()
+        self.lista_textos.setSelectionMode(QListWidget.ExtendedSelection)
+        
+        # --- LOS TRES TRUCOS ANTI-SALTOS DE UX ---
+        self.lista_textos.setUniformItemSizes(True) # Truco 1: Evita el recálculo de alto
+        self.lista_textos.setWordWrap(False)        # Truco 2: Fuerza que sea una sola línea visual
+        self.lista_textos.setLayoutMode(QListWidget.Batched) # Truco 3: Dibuja por lotes
+        
         self.textos_originales = ["(Carga un JSON para comenzar)"]
         self.poblar_lista()
 
-        # 3. Ensamblamos todo el panel izquierdo (¡AQUÍ FALTABAN LOS ADDWIDGET!)
         panel_izquierdo.addWidget(self.btn_cargar)
         panel_izquierdo.addWidget(self.barra_progreso)
         panel_izquierdo.addSpacing(10)
-        panel_izquierdo.addWidget(QLabel("Entradas en Bruto:"))
+        panel_izquierdo.addWidget(QLabel("Entradas en Bruto (Usa Shift/Ctrl para selección múltiple):"))
         panel_izquierdo.addLayout(layout_busqueda)
         panel_izquierdo.addWidget(self.lista_textos)
-
-        # ==========================================
-        # PANEL DERECHO: Visualización y Banderas
-        # ==========================================
-        # (El resto de tu código del panel derecho sigue igual...)
 
         # ==========================================
         # PANEL DERECHO: Visualización y Banderas
@@ -136,15 +189,14 @@ class TabDepurador(QWidget):
         self.visor_texto.setReadOnly(True)
         self.visor_texto.setStyleSheet("background-color: #f0f0f0; font-size: 16px; padding: 10px;")
 
-        # Panel de Banderas (Radio Buttons para mejor UX)
         self.grupo_banderas = QButtonGroup(self)
         
         opciones = [
             (0, "0. NO TRADUCIR (Ignorar/Basura)"),
-            (1, "1. Menú del Sistema (Fuente Angular)"),
-            (2, "2. Diálogo / Briefing (Fuente Genérica)"),
-            (3, "3. Nombres de Piezas / Tienda"),
-            (4, "4. Interfaz / HUD de Combate")
+            (1, "1. Menú / Interfaz (SIEMPRE MAYÚSCULAS)"),
+            (2, "2. Diálogo / Descripción (Usa \\n)"),
+            (3, "3. Mails / Correos (Usa <BR>)"),
+            (4, "4. Briefings de Misión (Códigos & y *)")
         ]
 
         panel_derecho.addWidget(QLabel("Texto Original Seleccionado:"))
@@ -159,22 +211,21 @@ class TabDepurador(QWidget):
             panel_derecho.addWidget(radio)
             self.radios[id_opcion] = radio
 
-        # Evento cuando cambias de radio button
         self.grupo_banderas.buttonClicked.connect(self.registrar_clasificacion)
 
         self.lbl_estado_guardado = QLabel("")
         self.lbl_estado_guardado.setStyleSheet("color: gray; font-style: italic;")
 
-        self.btn_exportar = QPushButton("💾 CONSTRUIR PLANTILLA MAESTRA")
+        self.btn_exportar = QPushButton("💾 EXPORTAR PLANTILLA MAESTRA")
         self.btn_exportar.setMinimumHeight(50)
         self.btn_exportar.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold; font-size: 14px;")
+        self.btn_exportar.clicked.connect(self.exportar_plantilla)
 
         panel_derecho.addSpacing(20)
         panel_derecho.addWidget(self.lbl_estado_guardado)
         panel_derecho.addStretch()
         panel_derecho.addWidget(self.btn_exportar)
 
-        # Proporciones
         layout_principal.addLayout(panel_izquierdo, 1)
         layout_principal.addLayout(panel_derecho, 2)
         self.setLayout(layout_principal)
@@ -182,35 +233,43 @@ class TabDepurador(QWidget):
         self.lista_textos.currentItemChanged.connect(self.actualizar_visor)
 
     def configurar_atajos(self):
-        # Atajos de teclado para clasificar a la velocidad de la luz
         for i in range(5):
             atajo = QShortcut(QKeySequence(str(i)), self)
-            # Usamos un parámetro por defecto (val=i) en la lambda para atrapar el valor en el bucle
             atajo.activated.connect(lambda val=i: self.atajo_presionado(val))
 
     def atajo_presionado(self, id_opcion):
-        if self.lista_textos.currentItem():
-            # Selecciona el radio button visualmente
+        if self.lista_textos.selectedItems():
             self.radios[id_opcion].setChecked(True)
-            # Registra y avanza
             self.registrar_clasificacion(self.radios[id_opcion])
 
     def poblar_lista(self):
         self.lista_textos.clear()
+        
+        self.lista_textos.setUpdatesEnabled(False) # Congelamos la vista mientras llenamos
         for texto in self.textos_originales:
-            # Si el texto ya tiene una bandera asignada, le ponemos un indicativo visual (✓)
             prefijo = "[✓] " if texto in self.progreso else ""
             self.lista_textos.addItem(prefijo + texto)
+        self.lista_textos.setUpdatesEnabled(True)  # Descongelamos
+        
+        self.lista_textos.scrollToTop()
+        self.filtrar_lista()
 
     def filtrar_lista(self):
         busqueda = self.barra_busqueda.text()
         case_sensitive = self.chk_mayusculas.isChecked()
+        ocultar_etiquetados = self.chk_ocultar.isChecked()
+
+        self.lista_textos.setUpdatesEnabled(False) # Congelamos gráficos
 
         for i in range(self.lista_textos.count()):
             item = self.lista_textos.item(i)
-            # Quitamos el prefijo [✓] para hacer la búsqueda limpia
+            es_etiquetado = item.text().startswith("[✓]")
             texto_limpio = item.text().replace("[✓] ", "") 
             
+            if ocultar_etiquetados and es_etiquetado:
+                item.setHidden(True)
+                continue
+
             if case_sensitive:
                 match = busqueda in texto_limpio
             else:
@@ -218,56 +277,114 @@ class TabDepurador(QWidget):
                 
             item.setHidden(not match)
 
+        self.lista_textos.setUpdatesEnabled(True) # Descongelamos gráficos
+
     def actualizar_visor(self, current, previous):
         if current:
             texto_limpio = current.text().replace("[✓] ", "")
             self.visor_texto.setText(texto_limpio)
             self.lbl_estado_guardado.setText("")
             
-            # Si ya habíamos clasificado este texto antes, recuperar su bandera
             if texto_limpio in self.progreso:
                 id_guardado = self.progreso[texto_limpio]
                 self.radios[id_guardado].setChecked(True)
             else:
-                # Quitar selecciones si es nuevo
                 self.grupo_banderas.setExclusive(False)
                 for btn in self.grupo_banderas.buttons():
                     btn.setChecked(False)
                 self.grupo_banderas.setExclusive(True)
 
     def registrar_clasificacion(self, button):
-        item_actual = self.lista_textos.currentItem()
-        if not item_actual: return
+        items_seleccionados = self.lista_textos.selectedItems()
+        if not items_seleccionados: return
 
-        # Guardar en el diccionario en memoria
-        texto_limpio = item_actual.text().replace("[✓] ", "")
+        # Guardamos la posición exacta del scroll
+        scrollbar = self.lista_textos.verticalScrollBar()
+        posicion_actual = scrollbar.value()
+
         id_opcion = self.grupo_banderas.id(button)
-        self.progreso[texto_limpio] = id_opcion
+        ultima_fila = 0
 
-        # Marcar visualmente en la lista
-        if not item_actual.text().startswith("[✓]"):
-            item_actual.setText("[✓] " + texto_limpio)
+        self.lista_textos.setUpdatesEnabled(False) # Evitamos el parpadeo y los saltos
 
-        # Disparar Auto-Guardado en archivo
+        for item in items_seleccionados:
+            texto_limpio = item.text().replace("[✓] ", "")
+            self.progreso[texto_limpio] = id_opcion
+
+            if not item.text().startswith("[✓]"):
+                item.setText("[✓] " + texto_limpio)
+            
+            fila = self.lista_textos.row(item)
+            if fila > ultima_fila:
+                ultima_fila = fila
+
         self.guardar_progreso()
+        self.lista_textos.setUpdatesEnabled(True)
 
-        # ¡Magia de UX! Saltar automáticamente al siguiente elemento de la lista
-        fila_actual = self.lista_textos.currentRow()
-        if fila_actual < self.lista_textos.count() - 1:
-            self.lista_textos.setCurrentRow(fila_actual + 1)
+        self.filtrar_lista() # El filtro se encarga de esconder si la exclusión está activa
+
+        self.lista_textos.clearSelection()
+
+        # Restauramos el scroll, a menos que hayamos excluido el elemento de la vista
+        if not self.chk_ocultar.isChecked():
+            scrollbar.setValue(posicion_actual)
+
+        # Buscamos la siguiente fila que no esté oculta y avanzamos a ella
+        siguiente_fila = ultima_fila + 1
+        while siguiente_fila < self.lista_textos.count():
+            item_siguiente = self.lista_textos.item(siguiente_fila)
+            if not item_siguiente.isHidden():
+                self.lista_textos.setCurrentRow(siguiente_fila)
+                self.lista_textos.scrollToItem(item_siguiente)
+                break
+            siguiente_fila += 1
     
     def abrir_archivo_json(self):
-        # Usamos getOpenFileNames (plural) para seleccionar varios archivos a la vez
         rutas, _ = QFileDialog.getOpenFileNames(self, "Seleccionar JSON(s)", "", "JSON (*.json)")
         
-        if rutas: # 'rutas' ahora es una lista de archivos, ej: ['SilentLine_Master.json', 'SLUS_Master.json']
+        if rutas:
             self.barra_progreso.setValue(0)
-            self.worker = WorkerCargaJSON(rutas) # Le pasamos la lista entera al Worker
+            self.worker = WorkerCargaJSON(rutas)
             self.worker.progreso.connect(self.barra_progreso.setValue)
             self.worker.terminado.connect(self.cargar_lista_final)
             self.worker.start()
 
-    def cargar_lista_final(self, lista_textos):
+    def cargar_lista_final(self, lista_textos, metadata_textos, tags_importados):
         self.textos_originales = lista_textos
+        self.metadata_textos = metadata_textos
+        
+        if tags_importados:
+            self.progreso.update(tags_importados)
+            self.guardar_progreso()
+            QMessageBox.information(self, "Merge Exitoso", f"Se importaron {len(tags_importados)} etiquetas previas.")
+
         self.poblar_lista()
         self.barra_progreso.setValue(100)
+
+    def exportar_plantilla(self):
+        if not self.progreso:
+            QMessageBox.warning(self, "Aviso", "No hay datos clasificados para exportar.")
+            return
+
+        plantilla_final = {}
+        for texto, flag in self.progreso.items():
+            if flag == 0:
+                continue
+            
+            mb = self.metadata_textos.get(texto, 255) 
+            
+            plantilla_final[texto] = {
+                "traduccion": "",
+                "max_bytes": mb,
+                "tipo": flag
+            }
+
+        ruta_salida = os.path.join("translation", "Plantilla_Maestra.json")
+        os.makedirs(os.path.dirname(ruta_salida), exist_ok=True)
+        
+        with open(ruta_salida, 'w', encoding='utf-8') as f:
+            json.dump(plantilla_final, f, ensure_ascii=False, indent=4)
+            
+        QMessageBox.information(self, "Exportación Exitosa", 
+                                f"Se ha construido la Plantilla Maestra en la carpeta 'translation'.\n"
+                                f"Contiene {len(plantilla_final)} cadenas listas para ser traducidas.")

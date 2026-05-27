@@ -21,4 +21,4 @@ class MainWindow(QMainWindow):
         # Añadimos las pestañas al contenedor
         self.tabs.addTab(self.tab_extractor, "0. Extractor (Archivos en bruto)") # <-- NUEVA PESTAÑA
         self.tabs.addTab(self.tab_depurador, "1. Depuración (Filtro Maestro)")
-        self.tabs.addTab(self.tab_traductor, "2. Traducción e Inyección")
+        self.tabs.addTab(self.tab_traductor, "2. Traducción")

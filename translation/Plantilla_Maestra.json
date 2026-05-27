@@ -1,0 +1,32 @@
+{
+    "BACK UNIT R<BR>Weapons, ammunition magazines and radars<BR>that attach to the back of the core.": {
+        "traduccion": "",
+        "max_bytes": 96,
+        "tipo": 3
+    },
+    "BACK UNIT R": {
+        "traduccion": "",
+        "max_bytes": 12,
+        "tipo": 1
+    },
+    "Requester : Crest/\\n/\\nAdvance : &x(0)/\\nUpon Success : &x(1)*\\n\\n\\n&p(-100,-40,200)&p(240,-80,160)&p(240,-100,-480)\\nBecause of an oversight, our first &c(1)surface-based/\\nweapons factory&c(0)&g(0)&p(330,-60,-80) was built closer to the Silent/\\nLine than we intended. It is subjected to/\\nunremitting &c(1)satellite-mounted&c(0)&g(1) cannon attacks.*\\n\\n&c(1)Mirage&c(0)&g(2) is aware of the constant threat faced by/\\nthe factory and intends to take advantage of the/\\nnext round of attacks to launch an assault of/\\ntheir own.*\\n\\nThe area surrounding the factory is rich in/\\nminerals which, despite the obvious dangers,/\\nis the reason we maintain our presence there.*\\n\\nA reward has been arranged that is in line with/\\nthe difficulty of this mission. Mirage's efforts/\\nto seize the factory must be foiled.": {
+        "traduccion": "",
+        "max_bytes": 4096,
+        "tipo": 4
+    },
+    "Requester : Crest/\\n/\\nAdvance : &x(0)/\\nUpon Success : &x(1)*\\n\\n\\n&p(210,-60,190)&p(-420,-80,-180)&p(-140,-90,210)\\nIt has come to our attention that &c(1)Mirage&c(0)&g(0) is/\\naccelerating plans to establish a main assault/\\nforce made up entirely of AI-controlled units./\\n&c(1)Kisaragi&c(0)&g(1) has been assisting&p(-340,-80,250) them in this effort.*\\n\\nKisaragi's involvement does not come as much of a/\\nsurprise, the company has been struggling to stay/\\non its feet and this arrangement is most likely a/\\nwindfall for them.*\\n\\nWe're sending you into Kisaragi's underground/\\narmory to delay manufacturing efforts and destroy/\\n&c(1)the AI prototype&c(0)&g(2) stored there.*\\n\\nHeavy resistance is anticipated, so we've arranged/\\nto have &c(1)resupply vehicle&c(0)&g(3) accompany you. Inflict as/\\nmuch damage on the facility as possible.": {
+        "traduccion": "",
+        "max_bytes": 4096,
+        "tipo": 4
+    },
+    "I'm pleased to inform you that a special addition <BR>has been added to your garage, it's the AC <BR>optional part, OP-INTENSIFY. Use of this part<BR>will take your AC's performance to new heights.": {
+        "traduccion": "I'm pleased to inform you that a special addition <BR>has been added to your garage, it's the AC <BR>optional part, OP-INTENSIFY. Use of this part<BR>will take your AC's performance to new heights.",
+        "max_bytes": 320,
+        "tipo": 3
+    },
+    "Please note, some Ravens frown upon its use, <BR>so equip it at your discretion.": {
+        "traduccion": "Please note, some Ravens frown upon its use, <BR>so equip it at your discretion.",
+        "max_bytes": 2560,
+        "tipo": 3
+    }
+}
