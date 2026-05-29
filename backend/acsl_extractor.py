@@ -37,20 +37,23 @@ def es_texto_valido(texto_limpio):
         return True
 
     # 2. PATRÓN DE PIEZAS: Ej. "CHD-SKYEYE", "MCL-SS/RAY"
-    # (Al menos 2 letras, un guión, y más letras/números)
     if re.match(r'^[A-Z0-9]{2,4}-[A-Z0-9/]{2,}$', texto):
         return True
 
-    # 3. FILTRO DE BASURA: Si no tiene espacios, suele ser código ensamblador fantasma
+    # 3. PALABRAS DE MENÚ (La nueva regla para GUIDE, ALTER, ZOOM, etc.)
+    # Acepta cadenas que sean exactamente 1 sola palabra, puramente alfabética, de 3 o más letras.
+    if re.match(r'^[A-Za-z]{3,}$', texto):
+        return True
+
+    # 4. FILTRO DE BASURA: Si no tiene espacios y no cumplió lo de arriba, es ruido.
     if " " not in texto:
         return False
 
-    # 4. FILTRO DE CORRUPCIÓN: Si tiene demasiados tags [HEX] (más del 20% del texto), es basura
+    # 5. FILTRO DE CORRUPCIÓN: Si tiene demasiados tags [HEX] (más del 20% del texto), es basura
     cantidad_hex = len(re.findall(r'\[[A-F0-9]{2}\]', texto_limpio)) * 4
     if len(texto_limpio) > 0 and (cantidad_hex / len(texto_limpio)) > 0.20:
         return False
 
-    # Si pasó los filtros, probablemente sea una frase o descripción válida
     return True
 
 def generar_diccionario_json(directorio_dat):

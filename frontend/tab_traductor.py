@@ -3,17 +3,42 @@ import json
 import re
 from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, 
                              QListWidget, QLineEdit, QLabel, QCheckBox,
-                             QPushButton, QMessageBox, QProgressBar, QPlainTextEdit, QTextEdit, QSplitter)
+                             QPushButton, QMessageBox, QProgressBar, QPlainTextEdit, 
+                             QTextEdit, QSplitter, QGroupBox, QFileDialog) # Añadido QFileDialog
 from PyQt5.QtCore import Qt
 
 class TabTraductor(QWidget):
     def __init__(self):
         super().__init__()
+        self.ruta_config = "config_toolkit.json"
+        self.config = self.cargar_configuracion()
+        
         self.plantilla = {}
-        self.archivo_plantilla = os.path.join("translation", "Plantilla_Maestra.json")
+        self.archivo_plantilla = None # Ya no está hardcodeado
         self.llave_actual = None
         
         self.init_ui()
+
+    def cargar_configuracion(self):
+        if os.path.exists(self.ruta_config):
+            try:
+                with open(self.ruta_config, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception:
+                return {}
+        return {}
+
+    def showEvent(self, event):
+        """Sincroniza las preferencias globales cada vez que se abre la pestaña."""
+        super().showEvent(event)
+        self.config = self.cargar_configuracion()
+        
+        # Actualizar el placeholder de ayuda según la configuración
+        simplificar = self.config.get('simplificar_acentos', True)
+        if simplificar:
+            self.lbl_ayuda_trad.setText("Tu Traducción (ñ, ¿, ¡ permitidos. Acentos se simplifican auto):")
+        else:
+            self.lbl_ayuda_trad.setText("Tu Traducción (Acentos permitidos según tu mapeo):")
 
     def init_ui(self):
         layout_principal = QHBoxLayout()
@@ -21,10 +46,14 @@ class TabTraductor(QWidget):
         # ==========================================
         # PANEL IZQUIERDO: Lista de Textos
         # ==========================================
+        grupo_izquierdo = QGroupBox("1. Explorador de Plantilla")
         panel_izquierdo = QVBoxLayout()
 
-        self.btn_cargar = QPushButton("📂 Cargar Plantilla Maestra")
-        self.btn_cargar.setStyleSheet("background-color: #607D8B; color: white; font-weight: bold; padding: 8px;")
+        self.btn_cargar = QPushButton("📂 Cargar Plantilla JSON")
+        self.btn_cargar.setStyleSheet("""
+            QPushButton { background-color: #455A64; color: white; font-weight: bold; border-radius: 4px; padding: 8px; }
+            QPushButton:hover { background-color: #546E7A; }
+        """)
         self.btn_cargar.clicked.connect(self.cargar_plantilla)
 
         layout_busqueda = QHBoxLayout()
@@ -33,6 +62,7 @@ class TabTraductor(QWidget):
         self.barra_busqueda.textChanged.connect(self.filtrar_lista)
         
         self.chk_pendientes = QCheckBox("Mostrar solo pendientes")
+        self.chk_pendientes.setStyleSheet("color: #dddddd; font-size: 13px;")
         self.chk_pendientes.stateChanged.connect(self.filtrar_lista)
 
         layout_busqueda.addWidget(self.barra_busqueda)
@@ -47,46 +77,48 @@ class TabTraductor(QWidget):
         panel_izquierdo.addWidget(QLabel("Textos a Traducir:"))
         panel_izquierdo.addLayout(layout_busqueda)
         panel_izquierdo.addWidget(self.lista_textos)
+        grupo_izquierdo.setLayout(panel_izquierdo)
 
         # ==========================================
         # PANEL DERECHO: Dos Columnas de Edición
         # ==========================================
+        grupo_derecho = QGroupBox("2. Área de Trabajo y Previsualización")
         panel_derecho = QVBoxLayout()
         
-        # Splitter interno para las dos columnas
         splitter_columnas = QSplitter(Qt.Horizontal)
 
         # --- COLUMNA 1: ORIGINAL ---
         widget_orig = QWidget()
         layout_orig = QVBoxLayout(widget_orig)
-        layout_orig.setContentsMargins(0, 0, 10, 0) # Margen derecho para separar
+        layout_orig.setContentsMargins(0, 0, 10, 0)
 
         layout_orig.addWidget(QLabel("Texto Original (Crudo):"))
         self.txt_original = QPlainTextEdit()
         self.txt_original.setReadOnly(True)
-        self.txt_original.setStyleSheet("background-color: #e8eaed; font-family: Consolas; font-size: 14px;")
+        self.txt_original.setStyleSheet("background-color: #2a2a2a; color: #aaaaaa; border: 1px solid #444444; border-radius: 4px; font-family: Consolas; font-size: 14px;")
         layout_orig.addWidget(self.txt_original)
 
         layout_orig.addWidget(QLabel("Vista Previa (Original):"))
         self.preview_orig = QTextEdit()
         self.preview_orig.setReadOnly(True)
-        self.preview_orig.setStyleSheet("background-color: #1e1e1e; font-family: Arial; font-size: 16px; padding: 5px;")
+        self.preview_orig.setStyleSheet("background-color: #0a0a0a; border: 1px solid #444444; border-radius: 4px; font-family: Arial; font-size: 16px; padding: 5px;")
         layout_orig.addWidget(self.preview_orig)
 
         # --- COLUMNA 2: TRADUCCIÓN ---
         widget_trad = QWidget()
         layout_trad = QVBoxLayout(widget_trad)
-        layout_trad.setContentsMargins(10, 0, 0, 0) # Margen izquierdo para separar
+        layout_trad.setContentsMargins(10, 0, 0, 0)
 
-        layout_trad.addWidget(QLabel("Tu Traducción (ñ, ¿, ¡ permitidos. Sin acentos):"))
+        self.lbl_ayuda_trad = QLabel("Tu Traducción (ñ, ¿, ¡ permitidos. Sin acentos):")
+        layout_trad.addWidget(self.lbl_ayuda_trad)
+        
         self.txt_traduccion = QPlainTextEdit()
-        self.txt_traduccion.setStyleSheet("font-family: Consolas; font-size: 14px; border: 2px solid #2196F3;")
+        self.txt_traduccion.setStyleSheet("background-color: #121212; color: #ffffff; border: 2px solid #2196F3; border-radius: 4px; font-family: Consolas; font-size: 14px;")
         self.txt_traduccion.textChanged.connect(self.actualizar_preview_y_bytes)
         layout_trad.addWidget(self.txt_traduccion)
 
-        # Medidor de Bytes
         self.lbl_bytes = QLabel("Bytes en la ISO: 0 / 0")
-        self.lbl_bytes.setStyleSheet("font-weight: bold; font-size: 13px;")
+        self.lbl_bytes.setStyleSheet("font-weight: bold; font-size: 13px; color: #dddddd;")
         self.barra_bytes = QProgressBar()
         self.barra_bytes.setTextVisible(False)
         self.barra_bytes.setFixedHeight(12)
@@ -97,53 +129,63 @@ class TabTraductor(QWidget):
         layout_trad.addWidget(QLabel("Vista Previa (Traducción):"))
         self.txt_preview = QTextEdit()
         self.txt_preview.setReadOnly(True)
-        self.txt_preview.setStyleSheet("background-color: #1e1e1e; font-family: Arial; font-size: 16px; padding: 5px;")
+        self.txt_preview.setStyleSheet("background-color: #0a0a0a; border: 1px solid #444444; border-radius: 4px; font-family: Arial; font-size: 16px; padding: 5px;")
         layout_trad.addWidget(self.txt_preview)
 
-        # Añadimos ambas columnas al splitter
         splitter_columnas.addWidget(widget_orig)
         splitter_columnas.addWidget(widget_trad)
-        
         panel_derecho.addWidget(splitter_columnas)
 
         # --- BOTONES DE ACCIÓN ---
         layout_botones = QHBoxLayout()
         self.btn_guardar = QPushButton("💾 Guardar Traducción")
-        self.btn_guardar.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 10px;")
+        self.btn_guardar.setStyleSheet("""
+            QPushButton { background-color: #388E3C; color: white; font-weight: bold; border-radius: 4px; padding: 10px; }
+            QPushButton:hover { background-color: #43A047; }
+        """)
         self.btn_guardar.clicked.connect(self.guardar_traduccion_actual)
 
         self.btn_siguiente = QPushButton("Siguiente ⏭")
-        self.btn_siguiente.setStyleSheet("background-color: #FF9800; color: white; font-weight: bold; padding: 10px;")
+        self.btn_siguiente.setStyleSheet("""
+            QPushButton { background-color: #F57C00; color: white; font-weight: bold; border-radius: 4px; padding: 10px; }
+            QPushButton:hover { background-color: #FB8C00; }
+        """)
         self.btn_siguiente.clicked.connect(self.saltar_siguiente)
 
         layout_botones.addWidget(self.btn_guardar)
         layout_botones.addWidget(self.btn_siguiente)
         panel_derecho.addLayout(layout_botones)
+        grupo_derecho.setLayout(panel_derecho)
 
-        # Layout general (Izquierda 30%, Derecha 70%)
         splitter_principal = QSplitter(Qt.Horizontal)
-        widget_izq = QWidget()
-        widget_izq.setLayout(panel_izquierdo)
-        widget_der = QWidget()
-        widget_der.setLayout(panel_derecho)
-        
-        splitter_principal.addWidget(widget_izq)
-        splitter_principal.addWidget(widget_der)
+        splitter_principal.addWidget(grupo_izquierdo)
+        splitter_principal.addWidget(grupo_derecho)
         splitter_principal.setSizes([300, 800]) 
 
         layout_principal.addWidget(splitter_principal)
         self.setLayout(layout_principal)
 
     def cargar_plantilla(self):
-        if not os.path.exists(self.archivo_plantilla):
-            QMessageBox.warning(self, "Error", "No se encontró 'Plantilla_Maestra.json' en la carpeta translation.")
-            return
+        # Abre el diálogo en la carpeta 'translation' por defecto
+        dir_inicial = os.path.abspath("translation")
+        os.makedirs(dir_inicial, exist_ok=True)
+        
+        ruta, _ = QFileDialog.getOpenFileName(self, "Seleccionar Archivo JSON de Traducción", dir_inicial, "JSON (*.json)")
+        
+        if not ruta:
+            return # El usuario canceló la selección
             
-        with open(self.archivo_plantilla, 'r', encoding='utf-8') as f:
-            self.plantilla = json.load(f)
+        self.archivo_plantilla = ruta
+        
+        try:
+            with open(self.archivo_plantilla, 'r', encoding='utf-8') as f:
+                self.plantilla = json.load(f)
 
-        self.poblar_lista()
-        QMessageBox.information(self, "Éxito", f"Plantilla cargada con {len(self.plantilla)} entradas.")
+            self.poblar_lista()
+            nombre_archivo = os.path.basename(self.archivo_plantilla)
+            QMessageBox.information(self, "Éxito", f"Archivo cargado: '{nombre_archivo}'\nTotal de entradas: {len(self.plantilla)}.")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudo cargar el archivo:\n{e}")
 
     def poblar_lista(self):
         self.lista_textos.clear()
@@ -197,7 +239,6 @@ class TabTraductor(QWidget):
         self.txt_original.setPlainText(self.llave_actual)
         self.txt_traduccion.setPlainText(datos.get("traduccion", ""))
         
-        # Forzar generación del preview original
         tipo = datos.get("tipo", 2)
         self.preview_orig.setHtml(self.generar_html_preview(self.llave_actual, tipo))
         
@@ -209,7 +250,6 @@ class TabTraductor(QWidget):
         return len(texto_procesado)
 
     def generar_html_preview(self, texto, tipo):
-        """ Renderiza el formato in-game aislando colores y eliminando códigos técnicos """
         preview = texto.replace('<', '&lt;').replace('>', '&gt;')
         
         if tipo == 4:
@@ -257,8 +297,12 @@ class TabTraductor(QWidget):
         limite_bytes = max_bytes - 1 
         tipo = datos.get("tipo", 2)
 
-        # 1. Quitar acentos en vivo y forzar mayúsculas si es necesario
-        texto_limpio = texto.translate(str.maketrans('áéíóúÁÉÍÓÚ', 'aeiouAEIOU'))
+        texto_limpio = texto
+        
+        # Leemos la configuración para ver si simplificamos acentos o no
+        if self.config.get('simplificar_acentos', True):
+            texto_limpio = texto_limpio.translate(str.maketrans('áéíóúÁÉÍÓÚäëïöüÄËÏÖÜ', 'aeiouAEIOUaeiouAEIOU'))
+            
         if tipo == 1:
             texto_limpio = texto_limpio.upper()
             
@@ -272,7 +316,6 @@ class TabTraductor(QWidget):
             self.txt_traduccion.blockSignals(False)
             texto = texto_limpio
 
-        # 2. Cálculo de Bytes estricto y Hard Cap
         bytes_actuales = self.calcular_bytes_reales(texto)
         
         if bytes_actuales > limite_bytes:
@@ -300,19 +343,19 @@ class TabTraductor(QWidget):
             self.lbl_bytes.setStyleSheet("font-weight: bold; font-size: 13px; color: orange;")
         else:
             self.barra_bytes.setStyleSheet("QProgressBar::chunk { background-color: #4CAF50; }")
-            self.lbl_bytes.setStyleSheet("font-weight: bold; font-size: 13px; color: black;")
+            self.lbl_bytes.setStyleSheet("font-weight: bold; font-size: 13px; color: #dddddd;")
 
-        # 3. Formateo de Preview In-Game (Reutiliza el renderizador)
         self.txt_preview.setHtml(self.generar_html_preview(texto, tipo))
 
     def guardar_traduccion_actual(self):
-        if not self.llave_actual: return
+        if not self.llave_actual or not self.archivo_plantilla: return
 
         texto = self.txt_traduccion.toPlainText()
         tipo = self.plantilla[self.llave_actual].get("tipo", 2)
         
-        # Mismo filtro final por seguridad antes de guardar
-        texto = texto.translate(str.maketrans('áéíóúÁÉÍÓÚ', 'aeiouAEIOU'))
+        if self.config.get('simplificar_acentos', True):
+            texto = texto.translate(str.maketrans('áéíóúÁÉÍÓÚäëïöüÄËÏÖÜ', 'aeiouAEIOUaeiouAEIOU'))
+            
         if tipo == 1:
             texto = texto.upper()
             

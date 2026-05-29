@@ -1,0 +1,21 @@
+{
+    "ultimo_dir_json": "C:\\Users\\Enrique\\Documents\\Disco auxiliar\\ICO\\Proyectos personales\\AC3SL_Localization_Toolkit\\data\\raw_output",
+    "reemplazos_fuente": {
+        "ñ": "@",
+        "Ñ": "*",
+        "¿": "&",
+        "¡": "_"
+    },
+    "char_map": {
+        "ñ": "@",
+        "Ñ": "*",
+        "¿": "&",
+        "¡": "_"
+    },
+    "qbms_exe": "C:\\Users\\Enrique\\Downloads\\quickbms\\quickbms.exe",
+    "qbms_script": "C:\\Users\\Enrique\\Downloads\\quickbms\\silent_line.bms",
+    "bin": "C:\\Users\\Enrique\\Documents\\PCSX2\\Juegos\\Armored Core Silent Line True-Analogs [v1.3] [VanLaser [NTSC]\\Coño\\ac3data.bin",
+    "simplificar_acentos": true,
+    "dats": "C:\\Users\\Enrique\\Documents\\Disco auxiliar\\ICO\\Proyectos personales\\AC3SL_Localization_Toolkit\\data\\dats",
+    "slus": "C:\\Users\\Enrique\\Documents\\PCSX2\\Juegos\\Armored Core Silent Line True-Analogs [v1.3] [VanLaser [NTSC]\\Coño\\SLUS_206.44"
+}
