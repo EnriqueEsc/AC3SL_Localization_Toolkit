@@ -22,7 +22,7 @@ class MainWindow(QMainWindow):
         self.tab_depurador = TabDepurador()
         self.tab_traductor = TabTraductor()
         self.tab_compilador = TabCompilador() 
-        self.tab_preferencias = TabPreferencias() # <-- Inicializar
+        self.tab_preferencias = TabPreferencias() 
 
         self.tabs.addTab(self.tab_extractor, "0. Extractor")
         self.tabs.addTab(self.tab_depurador, "1. Depuración")
@@ -64,7 +64,7 @@ class MainWindow(QMainWindow):
         QTabBar::tab:selected {
             background: #323232;
             color: #ffffff;
-            border-top: 3px solid #2196F3; /* Acento azul formal */
+            border-top: 3px solid #2196F3;
             font-weight: bold;
         }
         
@@ -116,6 +116,28 @@ class MainWindow(QMainWindow):
         /* Textos estáticos */
         QLabel {
             color: #dddddd;
+        }
+
+        /* ================================================= */
+        /* SOLUCIÓN: ESTILOS PARA CAJAS DE MENSAJES          */
+        /* ================================================= */
+        QMessageBox {
+            background-color: #2b2b2b;
+        }
+        QMessageBox QLabel {
+            color: #ffffff;
+            font-size: 13px;
+        }
+        QMessageBox QPushButton {
+            background-color: #1976D2;
+            color: white;
+            font-weight: bold;
+            border-radius: 4px;
+            padding: 6px 15px;
+            min-width: 80px;
+        }
+        QMessageBox QPushButton:hover {
+            background-color: #1E88E5;
         }
         """
         self.setStyleSheet(estilo_oscuro)

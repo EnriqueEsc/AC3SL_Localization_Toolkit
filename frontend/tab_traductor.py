@@ -4,7 +4,7 @@ import re
 from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, 
                              QListWidget, QLineEdit, QLabel, QCheckBox,
                              QPushButton, QMessageBox, QProgressBar, QPlainTextEdit, 
-                             QTextEdit, QSplitter, QGroupBox, QFileDialog) # Añadido QFileDialog
+                             QTextEdit, QSplitter, QGroupBox, QFileDialog)
 from PyQt5.QtCore import Qt
 
 class TabTraductor(QWidget):
@@ -14,7 +14,7 @@ class TabTraductor(QWidget):
         self.config = self.cargar_configuracion()
         
         self.plantilla = {}
-        self.archivo_plantilla = None # Ya no está hardcodeado
+        self.archivo_plantilla = None
         self.llave_actual = None
         
         self.init_ui()
@@ -33,7 +33,6 @@ class TabTraductor(QWidget):
         super().showEvent(event)
         self.config = self.cargar_configuracion()
         
-        # Actualizar el placeholder de ayuda según la configuración
         simplificar = self.config.get('simplificar_acentos', True)
         if simplificar:
             self.lbl_ayuda_trad.setText("Tu Traducción (ñ, ¿, ¡ permitidos. Acentos se simplifican auto):")
@@ -58,8 +57,10 @@ class TabTraductor(QWidget):
 
         layout_busqueda = QHBoxLayout()
         self.barra_busqueda = QLineEdit()
-        self.barra_busqueda.setPlaceholderText("🔍 Buscar original o traducción...")
-        self.barra_busqueda.textChanged.connect(self.filtrar_lista)
+        # -> CAMBIO: Instrucción visual para el usuario
+        self.barra_busqueda.setPlaceholderText("🔍 Buscar original o traducción... (Presiona Enter)")
+        # -> CAMBIO: Reemplazamos textChanged por returnPressed
+        self.barra_busqueda.returnPressed.connect(self.filtrar_lista)
         
         self.chk_pendientes = QCheckBox("Mostrar solo pendientes")
         self.chk_pendientes.setStyleSheet("color: #dddddd; font-size: 13px;")
@@ -166,14 +167,13 @@ class TabTraductor(QWidget):
         self.setLayout(layout_principal)
 
     def cargar_plantilla(self):
-        # Abre el diálogo en la carpeta 'translation' por defecto
         dir_inicial = os.path.abspath("translation")
         os.makedirs(dir_inicial, exist_ok=True)
         
         ruta, _ = QFileDialog.getOpenFileName(self, "Seleccionar Archivo JSON de Traducción", dir_inicial, "JSON (*.json)")
         
         if not ruta:
-            return # El usuario canceló la selección
+            return 
             
         self.archivo_plantilla = ruta
         
@@ -240,7 +240,12 @@ class TabTraductor(QWidget):
         self.txt_traduccion.setPlainText(datos.get("traduccion", ""))
         
         tipo = datos.get("tipo", 2)
+        
+        # Bloquear el scroll de la vista previa original al cambiar de item (opcional pero recomendado)
+        scrollbar_orig = self.preview_orig.verticalScrollBar()
+        pos_orig = scrollbar_orig.value()
         self.preview_orig.setHtml(self.generar_html_preview(self.llave_actual, tipo))
+        scrollbar_orig.setValue(pos_orig)
         
         self.txt_traduccion.blockSignals(False)
         self.actualizar_preview_y_bytes()
@@ -294,12 +299,11 @@ class TabTraductor(QWidget):
         texto = self.txt_traduccion.toPlainText()
         datos = self.plantilla[self.llave_actual]
         max_bytes = datos.get("max_bytes", 255)
-        limite_bytes = max_bytes - 1 
+        limite_bytes = max_bytes 
         tipo = datos.get("tipo", 2)
 
         texto_limpio = texto
         
-        # Leemos la configuración para ver si simplificamos acentos o no
         if self.config.get('simplificar_acentos', True):
             texto_limpio = texto_limpio.translate(str.maketrans('áéíóúÁÉÍÓÚäëïöüÄËÏÖÜ', 'aeiouAEIOUaeiouAEIOU'))
             
@@ -345,7 +349,16 @@ class TabTraductor(QWidget):
             self.barra_bytes.setStyleSheet("QProgressBar::chunk { background-color: #4CAF50; }")
             self.lbl_bytes.setStyleSheet("font-weight: bold; font-size: 13px; color: #dddddd;")
 
+        # ====================================================
+        # CORRECCIÓN DE LA POSICIÓN DEL SCROLL EN LA VISTA PREVIA
+        # ====================================================
+        scrollbar = self.txt_preview.verticalScrollBar()
+        posicion_actual = scrollbar.value()
+        
         self.txt_preview.setHtml(self.generar_html_preview(texto, tipo))
+        
+        # Le decimos al scrollbar que regrese a donde estaba antes de renderizar
+        scrollbar.setValue(posicion_actual)
 
     def guardar_traduccion_actual(self):
         if not self.llave_actual or not self.archivo_plantilla: return

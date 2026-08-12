@@ -1,10 +1,12 @@
 import os
 import json
 import re
+import shutil # <-- NUEVA IMPORTACIÓN PARA CREAR BACKUPS
 from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, 
                              QListWidget, QLineEdit, QLabel, QCheckBox,
                              QTextEdit, QPushButton, QMessageBox, QRadioButton, 
-                             QButtonGroup, QProgressBar, QFileDialog, QGroupBox)
+                             QButtonGroup, QProgressBar, QFileDialog, QGroupBox,
+                             QApplication)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import QShortcut
@@ -56,7 +58,7 @@ class WorkerCargaJSON(QThread):
                     for entrada in entradas:
                         original = entrada.get("original", "")
                         
-                        if len(original) > 4 and not re.search(r'\[[A-F0-9]{2}\]', original):
+                        if len(original) >= 4 and not re.search(r'\[[A-F0-9]{2}\]', original):
                             mb = entrada.get("max_bytes", 9999)
                             if original not in textos_unicos or mb < textos_unicos[original]:
                                 textos_unicos[original] = mb
@@ -158,12 +160,11 @@ class TabDepurador(QWidget):
         
         layout_busqueda = QHBoxLayout()
         self.barra_busqueda = QLineEdit()
-        self.barra_busqueda.setPlaceholderText("🔍 Buscar texto...")
-        self.barra_busqueda.textChanged.connect(self.filtrar_lista)
+        self.barra_busqueda.setPlaceholderText("🔍 Buscar texto... (Presiona Enter)")
+        self.barra_busqueda.returnPressed.connect(self.filtrar_lista)
         
         layout_filtros = QVBoxLayout()
         
-        # Corrección de color para Checkboxes
         estilo_checks = "color: #dddddd; font-size: 13px;"
         
         self.chk_mayusculas = QCheckBox("Aa Coincidir mayúsculas")
@@ -205,7 +206,6 @@ class TabDepurador(QWidget):
 
         self.visor_texto = QTextEdit()
         self.visor_texto.setReadOnly(True)
-        # Corrección de color de fuente para el visor
         self.visor_texto.setStyleSheet("background-color: #121212; color: #ffffff; font-size: 15px; padding: 10px; border: 1px solid #444444; border-radius: 4px;")
 
         self.grupo_banderas = QButtonGroup(self)
@@ -226,7 +226,6 @@ class TabDepurador(QWidget):
         self.radios = {}
         for id_opcion, texto in opciones:
             radio = QRadioButton(texto)
-            # Corrección de color para los Radio Buttons
             radio.setStyleSheet("color: #dddddd; font-size: 14px; padding: 3px;")
             self.grupo_banderas.addButton(radio, id_opcion)
             panel_derecho.addWidget(radio)
@@ -251,7 +250,6 @@ class TabDepurador(QWidget):
         panel_derecho.addWidget(self.btn_exportar)
         grupo_derecho.setLayout(panel_derecho)
 
-        # Integración al Layout Principal
         layout_principal.addWidget(grupo_izquierdo, 1)
         layout_principal.addWidget(grupo_derecho, 2)
         self.setLayout(layout_principal)
@@ -284,25 +282,44 @@ class TabDepurador(QWidget):
         case_sensitive = self.chk_mayusculas.isChecked()
         ocultar_etiquetados = self.chk_ocultar.isChecked()
 
+        total_items = self.lista_textos.count()
+        if total_items == 0:
+            return
+
+        self.barra_busqueda.setEnabled(False)
+        self.chk_mayusculas.setEnabled(False)
+        self.chk_ocultar.setEnabled(False)
         self.lista_textos.setUpdatesEnabled(False)
 
-        for i in range(self.lista_textos.count()):
+        self.barra_progreso.setMaximum(total_items)
+        self.barra_progreso.setValue(0)
+
+        for i in range(total_items):
             item = self.lista_textos.item(i)
             es_etiquetado = item.text().startswith("[✓]")
             texto_limpio = item.text().replace("[✓] ", "") 
             
             if ocultar_etiquetados and es_etiquetado:
                 item.setHidden(True)
-                continue
-
-            if case_sensitive:
-                match = busqueda in texto_limpio
             else:
-                match = busqueda.lower() in texto_limpio.lower()
-                
-            item.setHidden(not match)
+                if case_sensitive:
+                    match = busqueda in texto_limpio
+                else:
+                    match = busqueda.lower() in texto_limpio.lower()
+                    
+                item.setHidden(not match)
 
+            if i % 150 == 0:
+                self.barra_progreso.setValue(i)
+                QApplication.processEvents()
+
+        self.barra_progreso.setValue(total_items)
         self.lista_textos.setUpdatesEnabled(True)
+        
+        self.barra_busqueda.setEnabled(True)
+        self.chk_mayusculas.setEnabled(True)
+        self.chk_ocultar.setEnabled(True)
+        self.barra_busqueda.setFocus()
 
     def actualizar_visor(self, current, previous):
         if current:
@@ -328,6 +345,7 @@ class TabDepurador(QWidget):
 
         id_opcion = self.grupo_banderas.id(button)
         ultima_fila = 0
+        ocultar_activo = self.chk_ocultar.isChecked() 
 
         self.lista_textos.setUpdatesEnabled(False)
 
@@ -338,16 +356,18 @@ class TabDepurador(QWidget):
             if not item.text().startswith("[✓]"):
                 item.setText("[✓] " + texto_limpio)
             
+            if ocultar_activo:
+                item.setHidden(True)
+            
             fila = self.lista_textos.row(item)
             if fila > ultima_fila:
                 ultima_fila = fila
 
         self.guardar_progreso()
-        self.lista_textos.setUpdatesEnabled(True)
-        self.filtrar_lista()
+        
         self.lista_textos.clearSelection()
 
-        if not self.chk_ocultar.isChecked():
+        if not ocultar_activo:
             scrollbar.setValue(posicion_actual)
 
         siguiente_fila = ultima_fila + 1
@@ -358,6 +378,8 @@ class TabDepurador(QWidget):
                 self.lista_textos.scrollToItem(item_siguiente)
                 break
             siguiente_fila += 1
+            
+        self.lista_textos.setUpdatesEnabled(True)
     
     def abrir_archivo_json(self):
         dir_inicial = self.config.get("ultimo_dir_json", "")
@@ -385,30 +407,63 @@ class TabDepurador(QWidget):
         self.poblar_lista()
         self.barra_progreso.setValue(100)
 
+    # ==========================================
+    # NUEVA LÓGICA DE EXPORTACIÓN CON MERGE Y BACKUP
+    # ==========================================
     def exportar_plantilla(self):
         if not self.progreso:
             QMessageBox.warning(self, "Aviso", "No hay datos clasificados para exportar.")
             return
 
+        ruta_salida = os.path.join("translation", "Plantilla_Maestra.json")
+        os.makedirs(os.path.dirname(ruta_salida), exist_ok=True)
+
+        plantilla_existente = {}
+        backup_creado = False
+
+        # 1. Crear backup y leer la plantilla antigua si ya existe
+        if os.path.exists(ruta_salida):
+            try:
+                ruta_backup = os.path.join("translation", "Plantilla_Maestra_backup.json")
+                shutil.copy2(ruta_salida, ruta_backup)
+                backup_creado = True
+                
+                with open(ruta_salida, 'r', encoding='utf-8') as f:
+                    plantilla_existente = json.load(f)
+            except Exception as e:
+                print(f"No se pudo respaldar o leer la plantilla existente: {e}")
+
         plantilla_final = {}
+        textos_recuperados = 0
+
+        # 2. Construir la nueva plantilla fusionando datos
         for texto, flag in self.progreso.items():
             if flag == 0:
                 continue
             
             mb = self.metadata_textos.get(texto, 255) 
             
+            # Rescatar la traducción si el texto ya estaba en la plantilla anterior
+            traduccion_previa = ""
+            if texto in plantilla_existente:
+                traduccion_previa = plantilla_existente[texto].get("traduccion", "")
+                if traduccion_previa.strip():
+                    textos_recuperados += 1
+            
             plantilla_final[texto] = {
-                "traduccion": "",
+                "traduccion": traduccion_previa,
                 "max_bytes": mb,
                 "tipo": flag
             }
 
-        ruta_salida = os.path.join("translation", "Plantilla_Maestra.json")
-        os.makedirs(os.path.dirname(ruta_salida), exist_ok=True)
-        
+        # 3. Sobreescribir con los datos combinados
         with open(ruta_salida, 'w', encoding='utf-8') as f:
             json.dump(plantilla_final, f, ensure_ascii=False, indent=4)
             
-        QMessageBox.information(self, "Exportación Exitosa", 
-                                f"Se ha construido la Plantilla Maestra en la carpeta 'translation'.\n"
-                                f"Contiene {len(plantilla_final)} cadenas listas para ser traducidas.")
+        mensaje_final = f"Se ha construido la Plantilla Maestra en la carpeta 'translation'.\nContiene {len(plantilla_final)} cadenas."
+        
+        if backup_creado:
+            mensaje_final += f"\n\nSe respetaron {textos_recuperados} traducciones previas mediante Merge."
+            mensaje_final += "\nSe creó una copia de seguridad (Plantilla_Maestra_backup.json)."
+
+        QMessageBox.information(self, "Exportación Exitosa", mensaje_final)
